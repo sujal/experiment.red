@@ -247,6 +247,15 @@ async function downloadAndProcess(url, options = {}) {
       ? sanitizeFilename(videoInfo.playlist_title)
       : title;
 
+    // Create comment field with description and URL
+    const videoUrl = videoInfo.webpage_url || url;
+    let comment = '';
+    if (videoInfo.description) {
+      comment = videoInfo.description.trim();
+      comment += '\n\n';
+    }
+    comment += `Source: ${videoUrl}`;
+
     success(`Title: ${title}`);
     success(`Uploader: ${uploader}`);
     if (videoInfo.playlist_title) {
@@ -421,7 +430,9 @@ async function downloadAndProcess(url, options = {}) {
         '-metadata', `title=${title}`,
         '-metadata', `artist=${uploader}`,
         '-metadata', `album=${album}`,
-        '-metadata', `date=${uploadDate.slice(0, 4)}`,
+        '-metadata', `date=${uploadDate}`,
+        '-metadata', `genre=${options.genre}`,
+        '-metadata', `comment=${comment}`,
         '-movflags', '+faststart',
         '-y',
         outputPath,
@@ -455,7 +466,9 @@ async function downloadAndProcess(url, options = {}) {
         '-metadata', `title=${title}`,
         '-metadata', `artist=${uploader}`,
         '-metadata', `album=${album}`,
-        '-metadata', `date=${uploadDate.slice(0, 4)}`,
+        '-metadata', `date=${uploadDate}`,
+        '-metadata', `genre=${options.genre}`,
+        '-metadata', `comment=${comment}`,
         '-movflags', '+faststart',
         '-y',
         outputPath,
@@ -529,6 +542,25 @@ function cleanupTempDirs() {
   success('All temp directories cleaned up!');
 }
 
+// Prompt user for input
+function promptUser(question, defaultValue = '') {
+  return new Promise((resolve) => {
+    const readline = require('readline').createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
+    const prompt = defaultValue
+      ? `${question} [${defaultValue}]: `
+      : `${question}: `;
+
+    readline.question(prompt, (answer) => {
+      readline.close();
+      resolve(answer.trim() || defaultValue);
+    });
+  });
+}
+
 // Main entry point
 async function main() {
   const args = process.argv.slice(2);
@@ -551,6 +583,7 @@ async function main() {
     log('Options:');
     log('  --force-redownload    Force re-download even if cached files exist');
     log('  --keep-temp           Keep temporary files after successful completion');
+    log('  --genre <genre>       Set the genre metadata (default: "Dance & DJ")');
     log('  --cleanup             Remove all cached temporary directories');
     log('');
     log('Configuration:');
@@ -575,13 +608,23 @@ async function main() {
   const options = {
     forceRedownload: false,
     keepTemp: false,
+    genre: null,
   };
 
-  for (const arg of args) {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
     if (arg === '--force-redownload') {
       options.forceRedownload = true;
     } else if (arg === '--keep-temp') {
       options.keepTemp = true;
+    } else if (arg === '--genre') {
+      if (i + 1 < args.length && !args[i + 1].startsWith('--')) {
+        options.genre = args[i + 1];
+        i++; // Skip next arg since we consumed it
+      } else {
+        error('--genre requires a value');
+        process.exit(1);
+      }
     } else if (!arg.startsWith('--')) {
       url = arg;
     } else {
@@ -604,6 +647,14 @@ async function main() {
   log('=======================\n');
 
   checkDependencies();
+
+  // Prompt for genre if not provided
+  if (!options.genre) {
+    log('');
+    options.genre = await promptUser('Enter genre', 'Dance & DJ');
+    log('');
+  }
+
   await downloadAndProcess(url, options);
 }
 
