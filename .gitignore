@@ -1,0 +1,35 @@
+# Environment variables
+.env
+
+# Dependencies
+node_modules/
+bun.lockb
+package-lock.json
+yarn.lock
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Downloaded files (for testing)
+*.m4a
+*.mp4
+*.webm
+*.jpg
+*.png
+*.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Output files
+music
