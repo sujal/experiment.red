@@ -261,12 +261,19 @@ async function downloadAndProcess(url, options = {}) {
     if (videoInfo.playlist_title) {
       success(`Playlist: ${album}`);
     }
+    success(`Upload date: ${uploadDate}`);
 
     const hasChapters = videoInfo.chapters && videoInfo.chapters.length > 0;
     if (hasChapters) {
       success(`Found ${videoInfo.chapters.length} chapters`);
     } else {
       info('No chapters found in video');
+    }
+
+    // Prompt for genre if not provided via command line
+    if (!options.genre) {
+      log('');
+      options.genre = await promptUser('Enter genre', 'Dance & DJ');
     }
 
     // Step 2: Download audio
@@ -647,14 +654,6 @@ async function main() {
   log('=======================\n');
 
   checkDependencies();
-
-  // Prompt for genre if not provided
-  if (!options.genre) {
-    log('');
-    options.genre = await promptUser('Enter genre', 'Dance & DJ');
-    log('');
-  }
-
   await downloadAndProcess(url, options);
 }
 
