@@ -300,7 +300,12 @@ async function downloadAndProcess(url, options = {}) {
       }
 
       audioArgs.push('-o', audioOutputTemplate, url);
+
+      console.log(''); // blank line
+      info('yt-dlp output (you can ignore messages about -k flag):');
+      console.log('─'.repeat(60));
       await runCommand('yt-dlp', audioArgs);
+      console.log('─'.repeat(60));
 
       // Find the downloaded audio file
       const newAudioFiles = readdirSync(tempDir).filter(f => f.startsWith('audio.') && (f.endsWith('.m4a') || f.endsWith('.webm')));
