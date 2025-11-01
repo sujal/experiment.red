@@ -106,42 +106,72 @@ function sanitizeFilename(name) {
     .trim();
 }
 
-// Center crop image to square
-async function centerCropImage(inputPath, outputPath, size) {
-  info(`Cropping image to ${size}x${size}...`);
-  await sharp(inputPath)
+// Create square artwork with blurred background
+async function createArtworkWithBlurredBackground(inputPath, outputPath, size) {
+  info(`Creating ${size}x${size} artwork with blurred background...`);
+
+  const image = sharp(inputPath);
+  const metadata = await image.metadata();
+
+  // Create blurred background - zoom to fill and blur heavily
+  const background = await sharp(inputPath)
     .resize(size, size, {
       fit: 'cover',
       position: 'center',
     })
+    .blur(50) // Heavy blur for background
+    .modulate({
+      brightness: 0.6, // Darken the background a bit
+    })
+    .toBuffer();
+
+  // Calculate dimensions to fit width while maintaining aspect ratio
+  const aspectRatio = metadata.width / metadata.height;
+  const finalWidth = size;
+  const finalHeight = Math.round(size / aspectRatio);
+
+  // Resize the original image to fit width
+  const foreground = await sharp(inputPath)
+    .resize(finalWidth, finalHeight, {
+      fit: 'inside',
+      withoutEnlargement: false,
+    })
+    .toBuffer();
+
+  // Calculate vertical centering
+  const topOffset = Math.round((size - finalHeight) / 2);
+
+  // Composite foreground onto blurred background
+  await sharp(background)
+    .composite([{
+      input: foreground,
+      top: topOffset,
+      left: 0,
+    }])
     .jpeg({ quality: 95 })
     .toFile(outputPath);
-  success('Image cropped');
+
+  success('Artwork created');
 }
 
 // Extract video frame at specific timestamp
 async function extractFrame(videoPath, timestamp, outputPath, size) {
   try {
+    const tempFramePath = outputPath + '.temp.jpg';
+
     await runCommand('ffmpeg', [
       '-ss', timestamp.toString(),
       '-i', videoPath,
       '-vframes', '1',
       '-y',
-      outputPath,
+      tempFramePath,
     ], { silent: true });
 
-    // Center crop the extracted frame
-    await sharp(outputPath)
-      .resize(size, size, {
-        fit: 'cover',
-        position: 'center',
-      })
-      .jpeg({ quality: 90 })
-      .toFile(outputPath + '.cropped.jpg');
+    // Create artwork with blurred background
+    await createArtworkWithBlurredBackground(tempFramePath, outputPath, size);
 
-    // Replace original with cropped
-    unlinkSync(outputPath);
-    execSync(`mv "${outputPath}.cropped.jpg" "${outputPath}"`);
+    // Clean up temp file
+    unlinkSync(tempFramePath);
   } catch (e) {
     error(`Failed to extract frame at ${timestamp}: ${e.message}`);
   }
@@ -212,8 +242,16 @@ async function downloadAndProcess(url, options = {}) {
       `${videoInfo.upload_date.slice(0, 4)}-${videoInfo.upload_date.slice(4, 6)}-${videoInfo.upload_date.slice(6, 8)}` :
       new Date().toISOString().split('T')[0];
 
+    // Use playlist title as album if available, otherwise use video title
+    const album = videoInfo.playlist_title
+      ? sanitizeFilename(videoInfo.playlist_title)
+      : title;
+
     success(`Title: ${title}`);
     success(`Uploader: ${uploader}`);
+    if (videoInfo.playlist_title) {
+      success(`Playlist: ${album}`);
+    }
 
     const hasChapters = videoInfo.chapters && videoInfo.chapters.length > 0;
     if (hasChapters) {
@@ -277,7 +315,7 @@ async function downloadAndProcess(url, options = {}) {
       const thumbFile = thumbFiles.length > 0 ? join(tempDir, thumbFiles[0]) : null;
 
       if (thumbFile) {
-        await centerCropImage(thumbFile, artworkPath, CONFIG.artworkSize);
+        await createArtworkWithBlurredBackground(thumbFile, artworkPath, CONFIG.artworkSize);
       } else {
         error('No thumbnail found');
       }
@@ -382,7 +420,7 @@ async function downloadAndProcess(url, options = {}) {
       ffmpegArgs.push(
         '-metadata', `title=${title}`,
         '-metadata', `artist=${uploader}`,
-        '-metadata', `album=YouTube`,
+        '-metadata', `album=${album}`,
         '-metadata', `date=${uploadDate.slice(0, 4)}`,
         '-movflags', '+faststart',
         '-y',
@@ -416,7 +454,7 @@ async function downloadAndProcess(url, options = {}) {
       ffmpegArgs.push(
         '-metadata', `title=${title}`,
         '-metadata', `artist=${uploader}`,
-        '-metadata', `album=YouTube`,
+        '-metadata', `album=${album}`,
         '-metadata', `date=${uploadDate.slice(0, 4)}`,
         '-movflags', '+faststart',
         '-y',
