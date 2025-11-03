@@ -19,7 +19,8 @@ tmp/
 *.webm
 *.jpg
 *.png
-*.json
+*.info.json
+music/**/*.json
 
 # OS files
 .DS_Store
@@ -28,6 +29,7 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+.claude/
 *.swp
 *.swo
 

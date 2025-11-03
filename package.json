@@ -1,0 +1,28 @@
+{
+  "name": "experiment.red",
+  "version": "1.0.0",
+  "description": "YouTube audio downloader for DJ sets and podcasts with chapter support",
+  "main": "experiment.red.js",
+  "type": "module",
+  "scripts": {
+    "start": "node experiment.red.js",
+    "bun": "bun experiment.red.js"
+  },
+  "keywords": [
+    "youtube",
+    "audio",
+    "download",
+    "m4a",
+    "chapters",
+    "dj-sets"
+  ],
+  "author": "UsefulClever LLC",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "sharp": "^0.33.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

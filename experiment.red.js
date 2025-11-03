@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn, execSync } from 'child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, readdirSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, readdirSync, rmSync } from 'fs';
 import { join, basename, dirname } from 'path';
 import { homedir } from 'os';
 import sharp from 'sharp';
@@ -497,7 +497,7 @@ async function downloadAndProcess(url, options = {}) {
       readdirSync(tempDir).forEach(file => {
         unlinkSync(join(tempDir, file));
       });
-      execSync(`rmdir "${tempDir}"`);
+      rmSync(tempDir);
       success('Cleanup complete');
     } else {
       info(`Temp files kept in: ${tempDir}`);
@@ -547,10 +547,10 @@ function cleanupTempDirs() {
     readdirSync(dirPath).forEach(file => {
       unlinkSync(join(dirPath, file));
     });
-    execSync(`rmdir "${dirPath}"`);
+    rmSync(dirPath);
   });
 
-  execSync(`rmdir "${tempBaseDir}"`);
+  rmSync(tempBaseDir);
   success('All temp directories cleaned up!');
 }
 
