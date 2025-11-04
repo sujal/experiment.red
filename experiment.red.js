@@ -494,10 +494,7 @@ async function downloadAndProcess(url, options = {}) {
     // Cleanup (only on success)
     if (!options.keepTemp) {
       info('Cleaning up temporary files...');
-      readdirSync(tempDir).forEach(file => {
-        unlinkSync(join(tempDir, file));
-      });
-      rmSync(tempDir);
+      rmSync(tempDir, { recursive: true, force: true });
       success('Cleanup complete');
     } else {
       info(`Temp files kept in: ${tempDir}`);
@@ -544,13 +541,10 @@ function cleanupTempDirs() {
 
   dirs.forEach(dir => {
     const dirPath = join(tempBaseDir, dir);
-    readdirSync(dirPath).forEach(file => {
-      unlinkSync(join(dirPath, file));
-    });
-    rmSync(dirPath);
+    rmSync(dirPath, { recursive: true, force: true });
   });
 
-  rmSync(tempBaseDir);
+  rmSync(tempBaseDir, { recursive: true, force: true });
   success('All temp directories cleaned up!');
 }
 
