@@ -177,6 +177,15 @@ async function extractFrame(videoPath, timestamp, outputPath, size) {
   }
 }
 
+// Format seconds to HH:MM:SS timestamp
+function formatTimestamp(seconds) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
 // Generate time-based segments for videos without chapters
 function generateTimeBasedSegments(duration, chunkDuration) {
   const segments = [];
@@ -189,7 +198,7 @@ function generateTimeBasedSegments(duration, chunkDuration) {
     segments.push({
       startTime,
       endTime,
-      title: `Segment ${i + 1}`,
+      title: `Segment ${i + 1} (${formatTimestamp(startTime)})`,
     });
   }
 
