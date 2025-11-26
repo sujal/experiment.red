@@ -177,33 +177,71 @@ async function extractFrame(videoPath, timestamp, outputPath, size) {
   }
 }
 
-// Format timestamp for FFMETADATA (milliseconds)
-function formatTimestamp(seconds) {
-  return Math.floor(seconds * 1000);
+// Generate time-based segments for videos without chapters
+function generateTimeBasedSegments(duration, chunkDuration) {
+  const segments = [];
+  const totalSegments = Math.ceil(duration / chunkDuration);
+
+  for (let i = 0; i < totalSegments; i++) {
+    const startTime = i * chunkDuration;
+    const endTime = Math.min((i + 1) * chunkDuration, duration);
+
+    segments.push({
+      startTime,
+      endTime,
+      title: `Segment ${i + 1}`,
+    });
+  }
+
+  return segments;
 }
 
-// Create FFMETADATA file with chapters
-function createFFMetadata(chapters, chapterImages, metadataPath) {
-  let content = ';FFMETADATA1\n\n';
+// Generate filename for track with padded number
+function generateTrackFilename(trackNum, totalTracks, title) {
+  const paddedNumber = trackNum.toString().padStart(2, '0');
+  return `${paddedNumber} - ${sanitizeFilename(title)}.m4a`;
+}
 
-  chapters.forEach((chapter, index) => {
-    const startTime = formatTimestamp(chapter.start_time);
-    const endTime = formatTimestamp(chapter.end_time);
+// Create individual track with metadata and artwork
+async function createTrack(inputAudio, startTime, endTime, outputPath, metadata, artworkPath) {
+  const ffmpegArgs = [
+    '-ss', startTime.toString(),
+    '-to', endTime.toString(),
+    '-i', inputAudio,
+  ];
 
-    content += '[CHAPTER]\n';
-    content += `TIMEBASE=1/1000\n`;
-    content += `START=${startTime}\n`;
-    content += `END=${endTime}\n`;
-    content += `title=${chapter.title || `Chapter ${index + 1}`}\n`;
+  // Add artwork if available
+  if (existsSync(artworkPath)) {
+    ffmpegArgs.push('-i', artworkPath);
+  }
 
-    // Note: Per-chapter images need to be embedded differently
-    // ffmpeg doesn't support per-chapter artwork in FFMETADATA alone
-    // We'll note this limitation in the docs
+  ffmpegArgs.push(
+    '-map', '0:a',
+    '-c:a', 'copy',
+    '-avoid_negative_ts', 'make_zero',
+  );
 
-    content += '\n';
+  // Add artwork as cover
+  if (existsSync(artworkPath)) {
+    ffmpegArgs.push(
+      '-map', '1:v',
+      '-c:v', 'copy',
+      '-disposition:v:0', 'attached_pic',
+    );
+  }
+
+  // Add all metadata
+  Object.entries(metadata).forEach(([key, value]) => {
+    ffmpegArgs.push('-metadata', `${key}=${value}`);
   });
 
-  writeFileSync(metadataPath, content);
+  ffmpegArgs.push(
+    '-movflags', '+faststart',
+    '-y',
+    outputPath,
+  );
+
+  await runCommand('ffmpeg', ffmpegArgs, { silent: true });
 }
 
 // Main download and processing function
@@ -269,6 +307,17 @@ async function downloadAndProcess(url, options = {}) {
     } else {
       info('No chapters found in video');
     }
+
+    // Determine segmentation strategy
+    const segments = hasChapters
+      ? videoInfo.chapters.map((ch, i) => ({
+          startTime: ch.start_time,
+          endTime: ch.end_time,
+          title: sanitizeFilename(ch.title || `Segment ${i + 1}`),
+        }))
+      : generateTimeBasedSegments(videoInfo.duration, 300);
+
+    info(`Creating album with ${segments.length} track${segments.length > 1 ? 's' : ''}...`);
 
     // Prompt for genre if not provided via command line
     if (!options.genre) {
@@ -399,97 +448,51 @@ async function downloadAndProcess(url, options = {}) {
       }
     }
 
-    // Step 5: Create final output with chapters and metadata
-    const outputFilename = `${title}.m4a`;
-    const outputPath = join(CONFIG.musicDir, outputFilename);
-    mkdirSync(CONFIG.musicDir, { recursive: true });
+    // Step 5: Create album with multiple tracks
+    const albumDirName = sanitizeFilename(title);
+    const albumPath = join(CONFIG.musicDir, albumDirName);
+    mkdirSync(albumPath, { recursive: true });
 
-    info('Creating final M4A with metadata and chapters...');
+    info('Creating album tracks...');
 
-    if (hasChapters) {
-      // Create FFMETADATA file
-      const metadataPath = join(tempDir, 'metadata.txt');
-      createFFMetadata(videoInfo.chapters, chapterArtworks, metadataPath);
+    // Prepare common metadata for all tracks
+    const commonMetadata = {
+      artist: uploader,
+      album: title,
+      album_artist: uploader,
+      date: uploadDate,
+      genre: options.genre,
+      compilation: '1',
+      gapless_playback: '1',
+      comment: comment,
+    };
 
-      // Embed chapters using ffmpeg
-      const ffmpegArgs = [
-        '-i', audioFile,
-        '-i', metadataPath,
-      ];
+    // Create each track
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i];
+      const trackNum = i + 1;
+      const trackFilename = generateTrackFilename(trackNum, segments.length, segment.title);
+      const trackPath = join(albumPath, trackFilename);
 
-      // Add artwork if available
-      if (existsSync(artworkPath)) {
-        ffmpegArgs.push('-i', artworkPath);
-      }
+      info(`Creating track ${trackNum}/${segments.length}: ${segment.title}`);
 
-      ffmpegArgs.push(
-        '-map', '0:a',
-        '-map_metadata', '1',
-        '-c:a', 'copy',
+      await createTrack(
+        audioFile,
+        segment.startTime,
+        segment.endTime,
+        trackPath,
+        {
+          ...commonMetadata,
+          title: segment.title,
+          track: `${trackNum}/${segments.length}`,
+        },
+        artworkPath
       );
 
-      // Add artwork as cover
-      if (existsSync(artworkPath)) {
-        ffmpegArgs.push(
-          '-map', '2:v',
-          '-c:v', 'copy',
-          '-disposition:v:0', 'attached_pic',
-        );
-      }
-
-      // Add metadata tags
-      ffmpegArgs.push(
-        '-metadata', `title=${title}`,
-        '-metadata', `artist=${uploader}`,
-        '-metadata', `album=${album}`,
-        '-metadata', `date=${uploadDate}`,
-        '-metadata', `genre=${options.genre}`,
-        '-metadata', `comment=${comment}`,
-        '-movflags', '+faststart',
-        '-y',
-        outputPath,
-      );
-
-      await runCommand('ffmpeg', ffmpegArgs, { silent: true });
-    } else {
-      // No chapters, just embed artwork and basic metadata
-      const ffmpegArgs = [
-        '-i', audioFile,
-      ];
-
-      if (existsSync(artworkPath)) {
-        ffmpegArgs.push('-i', artworkPath);
-      }
-
-      ffmpegArgs.push(
-        '-map', '0:a',
-        '-c:a', 'copy',
-      );
-
-      if (existsSync(artworkPath)) {
-        ffmpegArgs.push(
-          '-map', '1:v',
-          '-c:v', 'copy',
-          '-disposition:v:0', 'attached_pic',
-        );
-      }
-
-      ffmpegArgs.push(
-        '-metadata', `title=${title}`,
-        '-metadata', `artist=${uploader}`,
-        '-metadata', `album=${album}`,
-        '-metadata', `date=${uploadDate}`,
-        '-metadata', `genre=${options.genre}`,
-        '-metadata', `comment=${comment}`,
-        '-movflags', '+faststart',
-        '-y',
-        outputPath,
-      );
-
-      await runCommand('ffmpeg', ffmpegArgs, { silent: true });
+      success(`Track ${trackNum} created`);
     }
 
-    success(`File saved: ${outputPath}`);
+    success(`Album saved: ${albumPath}`);
 
     // Cleanup (only on success)
     if (!options.keepTemp) {
@@ -502,7 +505,8 @@ async function downloadAndProcess(url, options = {}) {
 
     log('');
     success('Download and processing complete!');
-    log(`Output: ${colors.green}${outputPath}${colors.reset}`);
+    log(`Album: ${colors.green}${albumPath}${colors.reset}`);
+    log(`Tracks: ${segments.length}`);
 
   } catch (e) {
     error(`Processing failed: ${e.message}`);

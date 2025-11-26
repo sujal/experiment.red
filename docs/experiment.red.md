@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-experiment.red is a command-line tool for downloading high-quality audio from YouTube videos and converting them to M4A format with embedded metadata, artwork, and chapter support. Primarily designed for DJ sets and podcasts from YouTube to be played in Apple Music on macOS/iOS/iPadOS.
+experiment.red is a command-line tool for downloading high-quality audio from YouTube videos and creating multi-track albums in M4A format with gapless playback support. The tool segments videos into tracks (based on chapters or time intervals) and embeds full metadata and artwork. Primarily designed for DJ sets and podcasts from YouTube to be played in Apple Music on macOS/iOS/iPadOS.
 
 ## Architecture
 
@@ -32,23 +32,31 @@ The download and processing pipeline consists of the following stages:
 ```
 1. Fetch Video Metadata
    ↓
-2. Download Audio (M4A preferred)
+2. Determine Segmentation Strategy
+   - Use chapters if available
+   - Otherwise create 5-minute segments
    ↓
-3. Download Thumbnail/Poster
+3. Download Audio (M4A preferred)
    ↓
-4. Process Artwork (center crop to square)
+4. Download Thumbnail/Poster
    ↓
-5. [If chapters exist] Download Video for Frame Extraction
+5. Process Artwork (center crop to square)
    ↓
-6. [If chapters exist] Extract Frame at Each Chapter Boundary
+6. [If chapters exist] Download Video for Frame Extraction
    ↓
-7. Create FFMETADATA File with Chapters
+7. [If chapters exist] Extract Frame at Each Chapter Boundary
    ↓
-8. Embed Metadata, Artwork, and Chapters into M4A
+8. Create Album Directory
    ↓
-9. Save to Output Directory
+9. For Each Segment:
+   - Split audio using ffmpeg (-ss/-to with -c:a copy)
+   - Embed metadata (title, artist, album, track number)
+   - Embed artwork as attached_pic
+   - Add gapless playback tags
    ↓
-10. Cleanup Temporary Files
+10. Save All Tracks to Album Directory
+   ↓
+11. Cleanup Temporary Files
 ```
 
 ### Audio Format Selection
@@ -139,33 +147,54 @@ This ensures the most important part of the image (typically center) is preserve
 
 ### Metadata Embedding
 
-Metadata is embedded into the M4A file using ffmpeg with the following mappings:
+Metadata is embedded into each track using ffmpeg with the following mappings:
 
-| Metadata Field | MP4 Atom | Source |
-|---------------|----------|---------|
-| Title | `©nam` | Video title |
-| Artist | `©ART` | Channel/uploader name |
-| Album | `©alb` | "YouTube" (constant) |
-| Year | `©day` | Upload date (year only) |
-| Cover Art | `covr` | Processed thumbnail |
-| Chapters | `chpl` | Video chapters or manual |
+| Metadata Field | MP4 Atom | Source | Track-Specific? |
+|---------------|----------|---------|-----------------|
+| Title | `©nam` | Chapter title or "Segment N" | ✓ Yes |
+| Artist | `©ART` | Channel/uploader name | No (shared) |
+| Album | `©alb` | Video title | No (shared) |
+| Album Artist | `aART` | Channel/uploader name | No (shared) |
+| Track Number | `trkn` | "N/TOTAL" (e.g., "1/10") | ✓ Yes |
+| Year | `©day` | Upload date (YYYY-MM-DD) | No (shared) |
+| Genre | `©gen` | User-provided or "Dance & DJ" | No (shared) |
+| Compilation | `cpil` | "1" | No (shared) |
+| Gapless Playback | Custom | "1" | No (shared) |
+| Comment | `©cmt` | Source URL + description | No (shared) |
+| Cover Art | `covr` | Processed thumbnail | No (shared) |
 
-**FFmpeg Command Structure**:
+**FFmpeg Command Structure (per track)**:
 ```bash
 ffmpeg \
-  -i audio.m4a \          # Input audio
-  -i metadata.txt \       # FFMETADATA1 file with chapters
+  -ss START_TIME \        # Seek to start position
+  -to END_TIME \          # Stop at end position
+  -i audio.m4a \          # Input audio (full file)
   -i artwork.jpg \        # Cover artwork
   -map 0:a \              # Map audio stream
-  -map_metadata 1 \       # Map metadata from FFMETADATA
+  -map 1:v \              # Map artwork stream
   -c:a copy \             # Copy audio codec (no re-encode)
-  -map 2 \                # Map artwork
-  -disposition:v:0 attached_pic \  # Set as cover art
-  -metadata title="..." \
-  -metadata artist="..." \
+  -c:v copy \             # Copy artwork codec
+  -avoid_negative_ts make_zero \ # Fix timestamp issues
+  -disposition:v:0 attached_pic \ # Set as cover art
+  -metadata title="Track Title" \
+  -metadata artist="Uploader" \
+  -metadata album="Video Title" \
+  -metadata album_artist="Uploader" \
+  -metadata track="1/10" \
+  -metadata date="2024-01-15" \
+  -metadata genre="Genre" \
+  -metadata compilation=1 \
+  -metadata gapless_playback=1 \
+  -metadata comment="Source URL" \
   -movflags +faststart \  # Optimize for streaming
-  output.m4a
+  output_01.m4a
 ```
+
+**Gapless Playback Implementation**:
+- The `gapless_playback=1` metadata flag signals gapless support
+- The `compilation=1` flag ensures tracks group as a single album
+- All tracks have identical album name, artist, and album_artist
+- Track numbers use format "N/TOTAL" for proper ordering
 
 ### Configuration System
 

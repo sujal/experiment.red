@@ -4,7 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**experiment.red** (aka mix-extractor) - A command-line tool for downloading high-quality audio from YouTube videos with chapter support and Apple Music compatibility. Built with Node.js/Bun, primarily for downloading DJ sets and podcasts from YouTube.
+**experiment.red** (aka mix-extractor) - A command-line tool for downloading high-quality audio from YouTube videos and creating multi-track albums with gapless playback for Apple Music. Built with Node.js/Bun, primarily for downloading DJ sets and podcasts from YouTube.
+
+**Key Features:**
+- Multi-track album output (one track per chapter or 5-minute segments)
+- Gapless playback support via iTunes metadata tags
+- Chapter-based or time-based segmentation
+- High-quality M4A audio with embedded artwork
 
 **Project Name**: The official project name is "experiment.red" but the repository is called "mix-extractor".
 
@@ -54,14 +60,15 @@ The tool is a **single-file Node.js script** (`experiment.red.js`) that orchestr
 
 **Pipeline Flow**:
 1. **Metadata Fetch** - Download video info JSON via yt-dlp
-2. **Audio Download** - Download best quality M4A audio
-3. **Thumbnail Download** - Get highest resolution poster image
-4. **Image Processing** - Center-crop artwork to square using Sharp
-5. **[Conditional] Video Download** - Only if chapters exist, download video for frame extraction
-6. **[Conditional] Frame Extraction** - Extract video frames at each chapter boundary
-7. **Metadata Assembly** - Create FFMETADATA1 file with chapter information
-8. **Final Assembly** - Use ffmpeg to embed metadata, chapters, and artwork into M4A
-9. **Cleanup** - Remove all temporary files
+2. **Segment Generation** - Determine track boundaries (chapters or 5-min chunks)
+3. **Audio Download** - Download best quality M4A audio
+4. **Thumbnail Download** - Get highest resolution poster image
+5. **Image Processing** - Center-crop artwork to square using Sharp
+6. **[Conditional] Video Download** - Only if chapters exist, download video for frame extraction
+7. **[Conditional] Frame Extraction** - Extract video frames at each chapter boundary (for future use)
+8. **Album Creation** - Create album directory and generate multiple track files
+9. **Track Processing** - For each segment, use ffmpeg to split audio and embed metadata
+10. **Cleanup** - Remove all temporary files
 
 ### Key Technology Decisions
 
@@ -125,21 +132,32 @@ During processing, the script creates a `temp/` directory with:
 - `video.*` - Downloaded video (only if chapters exist)
 - `thumb.*` - Original thumbnail
 - `artwork.jpg` - Processed center-cropped artwork
-- `chapter-N.jpg` - Extracted frames at chapter boundaries
-- `metadata.txt` - FFMETADATA1 file for ffmpeg
+- `chapter-N.jpg` - Extracted frames at chapter boundaries (for future use)
 
 All temporary files are deleted after successful completion.
 
 ## Important Implementation Notes
 
-### Chapter Artwork Limitation
+### Multi-Track Album Output
 
-While the code extracts video frames at chapter boundaries, **M4A's standard chapter format has limited support for per-chapter artwork** in most players. The current implementation:
-- Extracts frames (for future use or manual embedding)
-- Embeds a single main artwork (center-cropped poster)
-- Creates chapter markers with titles and timestamps
+The tool creates an album of multiple tracks instead of a single long file:
+- **With chapters**: One track per chapter, using chapter titles
+- **Without chapters**: 5-minute segments, named "Segment 1", "Segment 2", etc.
+- Each track is created using ffmpeg with `-ss` and `-to` flags for frame-accurate splitting
+- Uses `-c:a copy` to avoid re-encoding (preserves quality)
+- Adds `-avoid_negative_ts make_zero` to fix timestamp issues at boundaries
 
-For true per-chapter artwork, would need M4B format or enhanced podcast format.
+### Gapless Playback
+
+All tracks include iTunes gapless metadata for seamless playback:
+- `gapless_playback=1` metadata flag
+- `compilation=1` flag for proper album grouping
+- Consistent album name, artist, and album_artist across all tracks
+- Track numbers in format "N/TOTAL" (e.g., "1/10", "2/10")
+
+### Chapter Frame Extraction
+
+While the code still extracts video frames at chapter boundaries, they are currently unused in the multi-track output. These frames are preserved for potential future features (e.g., per-track artwork variation).
 
 ### YouTube Premium Authentication
 
@@ -161,24 +179,31 @@ The script checks for missing dependencies at startup and provides helpful error
 
 ### Adding New Metadata Fields
 
-1. Add ffmpeg `-metadata` flag in the final assembly step (experiment.red.js:~460)
+1. Add field to `commonMetadata` object in experiment.red.js (~464)
 2. Extract the field from `info` JSON object
 3. Update the metadata table in docs/experiment.red.md
 
+### Modifying Track Segmentation
+
+To change the 5-minute default for videos without chapters:
+1. Modify the `generateTimeBasedSegments` call in experiment.red.js (~323)
+2. Change the second parameter (currently `300` seconds)
+3. Consider adding a configuration option to `.env`
+
 ### Supporting Additional Output Formats
 
-1. Modify yt-dlp format selection (experiment.red.js:~200)
-2. Adjust ffmpeg codec parameters (experiment.red.js:~440)
-3. Update file extension handling throughout
+1. Modify yt-dlp format selection (experiment.red.js:~290)
+2. Adjust ffmpeg codec parameters in `createTrack` function (experiment.red.js:~210)
+3. Update file extension handling in `generateTrackFilename` (experiment.red.js:~205)
 
 ### Enabling SponsorBlock Integration
 
-Add to yt-dlp command:
+Add to yt-dlp command and merge with native chapters:
 ```javascript
 '--sponsorblock-mark', 'all'
 ```
 
-Then merge SponsorBlock chapters with native chapters before creating FFMETADATA.
+Then use SponsorBlock chapters as segment boundaries instead of fixed 5-minute chunks.
 
 ## Testing Strategy
 
@@ -186,16 +211,28 @@ Since this tool interfaces with external services (YouTube) and CLI tools, testi
 
 **Test Cases**:
 1. Video with chapters (DJ set with track list)
-2. Video without chapters (standard music video)
+   - Should create one track per chapter
+   - Track names should match chapter titles
+2. Video without chapters (standard music video or podcast)
+   - Should create 5-minute segments
+   - Track names should be "Segment 1", "Segment 2", etc.
 3. Long-form content (podcast, 1+ hour)
-4. YouTube Premium exclusive content
-5. Various thumbnail aspect ratios (vertical, horizontal, square)
+   - Should handle many tracks (12+ for hour-long content)
+4. Short video (< 5 minutes, no chapters)
+   - Should create single track in album folder
+5. YouTube Premium exclusive content
+   - Should download highest quality audio
+6. Various thumbnail aspect ratios (vertical, horizontal, square)
+   - Artwork should be properly centered and cropped
 
 **Verification**:
-- Check M4A file plays in Apple Music
-- Verify chapters appear in chapter menu
-- Confirm artwork displays correctly
-- Validate metadata fields (title, artist, album, year)
+- Check album folder is created with correct name
+- Verify all tracks are numbered sequentially (01, 02, 03...)
+- Import to Apple Music and verify tracks appear as single album
+- Test gapless playback (no silence between tracks)
+- Confirm artwork displays correctly on all tracks
+- Validate metadata fields (title, artist, album, year, track numbers)
+- Check compilation flag and gapless_playback metadata using ffprobe
 
 ## Documentation
 
@@ -207,6 +244,7 @@ Since this tool interfaces with external services (YouTube) and CLI tools, testi
 
 - No playlist support (single video only)
 - No batch processing
-- Per-chapter artwork extraction works but embedding is limited by M4A format
+- Sequential track processing (could be parallelized for better performance)
+- Fixed 5-minute segmentation for videos without chapters (not configurable yet)
 - No SponsorBlock integration (planned enhancement)
-- Sequential processing (could be parallelized for better performance)
+- Chapter frame extraction still runs but frames are unused in current implementation

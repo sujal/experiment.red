@@ -1,15 +1,17 @@
 # experiment.red
 
-YouTube audio downloader for DJ sets and podcasts with high-quality audio, chapter support, and Apple Music compatibility.
+YouTube audio downloader for DJ sets and podcasts that creates multi-track albums with gapless playback for Apple Music.
 
 ## Features
 
 - Download best quality audio from YouTube in M4A format
+- **Multi-track album output** - creates separate tracks from chapters or 5-minute segments
+- **Gapless playback** - seamless transitions between tracks in Apple Music
 - Preserve audio quality (no unnecessary transcoding)
-- Center-cropped poster artwork embedded as cover art
-- Chapter support with frame extraction at chapter boundaries
+- Center-cropped poster artwork embedded in all tracks
+- Chapter-based or time-based segmentation
 - YouTube Premium authentication for ad-free, highest quality streams
-- Metadata embedding (title, artist, album, year)
+- Full metadata embedding (title, artist, album, year, track numbers)
 - Optimized for Apple Music on macOS/iOS/iPadOS
 
 ## Installation
@@ -86,13 +88,28 @@ bun experiment.red.js "https://youtu.be/SHORT_URL"
 
 ### Output
 
-The downloaded M4A file will be saved to your configured `YOUTUBE_MUSIC_DIR` (default: `~/Music/YouTube`) with the video title as the filename.
+The tool creates an **album folder** in your configured `YOUTUBE_MUSIC_DIR` (default: `~/Music/YouTube`) named after the video title.
 
-The file will include:
-- High-quality AAC audio
+**Example output structure:**
+```
+~/Music/YouTube/
+└── Amazing DJ Set - Boiler Room/
+    ├── 01 - Opening Track.m4a
+    ├── 02 - Second Track.m4a
+    ├── 03 - Third Track.m4a
+    └── ...
+```
+
+**Track segmentation:**
+- Videos with chapters: One track per chapter (using chapter titles)
+- Videos without chapters: 5-minute segments (named "Segment 1", "Segment 2", etc.)
+
+**Each track includes:**
+- High-quality AAC audio (no re-encoding)
 - Embedded cover artwork (center-cropped poster)
-- Chapter markers (if the video has chapters)
-- Metadata (title, artist/uploader, album, year)
+- Full metadata (title, artist/uploader, album, year, track number)
+- Gapless playback tags for seamless listening
+- Compilation flag for proper album grouping
 
 ## YouTube Premium
 
@@ -107,25 +124,44 @@ Make sure you're logged into YouTube in the browser specified in your `.env` fil
 
 ### Drag and Drop
 
-Simply drag the downloaded M4A file into the Music app.
+Drag the entire album folder into the Music app. All tracks will be imported as a single album.
 
 ### Command Line
 
 ```bash
-open -a Music "/path/to/downloaded/file.m4a"
+open -a Music "/path/to/album/folder"
 ```
 
-The file will appear in your Music library with all metadata, artwork, and chapters intact.
+The album will appear in your Music library with:
+- All tracks grouped as a single album
+- Proper track ordering (01, 02, 03, etc.)
+- Gapless playback enabled for seamless listening
+- Full metadata and artwork on all tracks
 
-## Chapter Support
+### Verifying Gapless Playback
 
-If the YouTube video has chapters:
-- Chapter markers will be embedded in the M4A file
-- Chapter titles will be preserved
-- Video frames at each chapter boundary will be extracted (saved temporarily)
-- Chapters will be accessible in Music app's chapter menu
+After importing:
+1. Play the album in Apple Music
+2. Listen to track transitions - there should be no gaps or silence
+3. Check the "Gapless Album" checkbox in album info (should be auto-enabled)
 
-**Note**: While chapter frames are extracted, M4A format has limited support for per-chapter artwork in most players. The main poster artwork is used for all chapters.
+## Album Organization
+
+**Videos with chapters** (e.g., DJ sets with tracklists):
+- Each chapter becomes a separate track
+- Track names use the chapter titles from YouTube
+- Perfect for mixes where each track is a different song
+
+**Videos without chapters** (e.g., podcasts, long mixes):
+- Audio is split into 5-minute segments
+- Track names are "Segment 1", "Segment 2", etc.
+- Gapless playback ensures continuous listening experience
+
+**Why multi-track instead of single file?**
+- Better organization in music apps
+- Easier to navigate long content
+- Can skip between segments
+- Still plays continuously without gaps
 
 ## Troubleshooting
 
@@ -222,18 +258,18 @@ For implementation details, architecture, and development notes, see [docs/exper
 ## Limitations
 
 - Single video downloads only (no playlists)
-- Per-chapter artwork extraction is limited by M4A format constraints
+- Sequential track processing (not parallelized)
 - No SponsorBlock integration (yet)
-- Sequential processing (not optimized for bulk downloads)
+- Track segmentation is fixed at 5 minutes for videos without chapters
 
 ## Future Enhancements
 
 - Playlist support
 - SponsorBlock integration for automatic chapter markers
-- M4B audiobook format option for better chapter artwork
+- Parallel track processing for faster album creation
+- Configurable segment duration
 - Batch processing mode
 - GUI frontend
-- Chapter editing capabilities
 
 ## License
 
