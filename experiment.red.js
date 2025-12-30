@@ -298,10 +298,16 @@ async function downloadAndProcess(url, options = {}) {
     const videoUrl = videoInfo.webpage_url || url;
     let comment = '';
     if (videoInfo.description) {
-      comment = videoInfo.description.trim();
-      comment += '\n\n';
+      const trimmedDescription = videoInfo.description.trim();
+      // Take first 180 characters
+      comment = trimmedDescription.substring(0, 180);
+      // Add ellipsis if description was truncated
+      if (trimmedDescription.length > 180) {
+        comment += '...';
+      }
+      comment += '\n';
     }
-    comment += `Source: ${videoUrl}`;
+    comment += videoUrl;
 
     success(`Title: ${title}`);
     success(`Uploader: ${uploader}`);
